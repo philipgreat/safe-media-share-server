@@ -19,6 +19,17 @@ pub const REF_LIFETIME_SECS: u64 = 7 * 24 * 3600;
 const KEY_VERSION: u32 = 1;
 const KEY_ENV: &str = "MEDIA_GUARD_REF_KEY";
 const INVALID_REF: &str = "invalid media reference";
+const CODEC_REQUIRED: &str = "ENTITY_REFERENCE_CODEC_REQUIRED";
+
+/// Map token errors to a stable message. Missing codec is a config bug and
+/// keeps its code; everything else collapses to one opaque message so raw ids
+/// and crypto details never leak.
+fn map_token_err(err: &teaql_runtime::EntityReferenceTokenError) -> String {
+    match err.code() {
+        "ENTITY_REFERENCE_CODEC_REQUIRED" => CODEC_REQUIRED.to_owned(),
+        _ => INVALID_REF.to_owned(),
+    }
+}
 
 /// Process-wide codec, key version 1, installed on every request context.
 pub fn shared_codec() -> Arc<AeadEntityReferenceCodec> {
@@ -44,17 +55,18 @@ pub fn encode_asset_ref(context: &UserContext, asset_id: u64) -> Result<String, 
             PURPOSE,
             Duration::from_secs(REF_LIFETIME_SECS),
         )
-        .map_err(|_| INVALID_REF.to_owned())
+        .map_err(|err| map_token_err(&err))
 }
 
 /// Decode a guest-facing reference back to the real media asset id.
 ///
-/// All failures map to one message so raw ids and crypto details never leak.
+/// All failures map to one message so raw ids and crypto details never leak,
+/// except missing-codec which is a distinct configuration error.
 pub fn decode_asset_ref(context: &UserContext, token: &str) -> Result<u64, String> {
     context
         .decode_entity_reference(token, ENTITY_TYPE, PURPOSE)
         .map(|claims| claims.id)
-        .map_err(|_| INVALID_REF.to_owned())
+        .map_err(|err| map_token_err(&err))
 }
 
 /// Key load order: `MEDIA_GUARD_REF_KEY` as 64-char hex, standard base64 of

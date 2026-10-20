@@ -12,16 +12,28 @@ fn codec() -> AeadEntityReferenceCodec {
 
 #[test]
 fn encode_decode_round_trip_hides_raw_id() {
+    // Long id: substring "contains" checks against short numbers (e.g. 42)
+    // flake on random nonce/ciphertext bytes in the base64 envelope.
+    const ASSET_ID: u64 = 987_654_321_012;
     let codec = codec();
     let token = codec
-        .encode("MediaAsset", 42, 0, "media-access", Duration::from_secs(60))
+        .encode(
+            "MediaAsset",
+            ASSET_ID,
+            0,
+            "media-access",
+            Duration::from_secs(60),
+        )
         .expect("encode");
     assert!(token.starts_with("tqr1."), "token={token}");
-    assert!(!token.contains("42"), "raw id leaked in token");
+    assert!(
+        !token.contains(&ASSET_ID.to_string()),
+        "raw id leaked in token"
+    );
     let claims = codec
         .decode(&token, "MediaAsset", "media-access")
         .expect("decode");
-    assert_eq!(claims.id, 42);
+    assert_eq!(claims.id, ASSET_ID);
     assert_eq!(claims.entity_type, "MediaAsset");
     assert_eq!(claims.purpose, "media-access");
 }
@@ -75,11 +87,16 @@ mod helpers {
 
     #[test]
     fn helper_round_trip_hides_raw_id() {
+        // Long id: avoid flaky substring checks against random token bytes.
+        const ASSET_ID: u64 = 987_654_321_012;
         let context = context();
-        let token = encode_asset_ref(&context, 42).expect("encode");
+        let token = encode_asset_ref(&context, ASSET_ID).expect("encode");
         assert!(token.starts_with("tqr1."), "token={token}");
-        assert!(!token.contains("42"), "raw id leaked in token");
-        assert_eq!(decode_asset_ref(&context, &token).expect("decode"), 42);
+        assert!(
+            !token.contains(&ASSET_ID.to_string()),
+            "raw id leaked in token"
+        );
+        assert_eq!(decode_asset_ref(&context, &token).expect("decode"), ASSET_ID);
     }
 
     #[test]
