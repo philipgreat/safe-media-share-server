@@ -83,7 +83,7 @@ async fn health() -> WebResponse<Value> {
 }
 
 fn web_dist_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web/dist")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../react-frontend/dist")
 }
 
 fn mime_for(path: &std::path::Path) -> &'static str {

@@ -25,11 +25,11 @@ Owners manage media, whitelist, spent invites, upload, and external URL from an 
 
 ```
 models/model.xml                 # KSML domain model (source of truth)
-app-playground/rust-lib-core/    # Generated domain library (do not hand-edit)
-app-playground/rust-web-axum/    # Editable web workspace (Axum + React)
-  src/                           # invite ACL, Range, proxy, upload, admin API
-  web/                           # React + Vite frontend
+rust-lib-core/                   # Generated domain library (do not hand-edit)
+rust-web-axum/                   # Axum web service (API, ACL, Range, admin)
+  src/                           # handlers, service, session, entity_ref
   tests/                         # integration tests
+react-frontend/                  # React + Vite frontend
 work-complete.md                 # build evidence notes
 ```
 
@@ -43,12 +43,12 @@ work-complete.md                 # build evidence notes
 
 ```bash
 # 1) Frontend
-cd app-playground/rust-web-axum/web
+cd react-frontend
 npm install
 npm run build
 
 # 2) Server
-cd ..
+cd ../rust-web-axum
 export MEDIA_GUARD_SERVICE_CORE_DATABASE_URL="sqlite:///tmp/media-guard/data/media.db"
 export MEDIA_ROOT="/path/to/media"
 export MEDIA_GUARD_SERVICE_CORE_BIND_ADDR="0.0.0.0:18090"
@@ -102,14 +102,13 @@ Regenerate after model edits:
 ```bash
 cargo teaql --input models/model.xml evaluate
 cargo teaql --input models/model.xml rust-lib-core \
-  --output rust-lib-core \
-  --cwd "$PWD/app-playground"
+  --output rust-lib-core
 ```
 
 ## Tests
 
 ```bash
-cd app-playground/rust-web-axum
+cd rust-web-axum
 cargo test
 ```
 
