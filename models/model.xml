@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root name="media-guard-service"
+      cfg_mask_china_mobile="false"
+      data_service="sqlite"
+      org="example"
+      _module_key="root">
+
+  <media_library _name="Media Library"
+                 _module="Library"
+                 _module_key="library"
+                 library_name="Home Video Library"
+                 root_path="/srv/media"
+                 create_time="createTime()"
+                 update_time="updateTime()"/>
+
+  <media_asset _name="Media Asset"
+               _module="Library"
+               _module_key="library"
+               media_library="media_library()"
+               display_name="Demo Video"
+               file_path="videos/demo.mp4"
+               content_type="video/mp4"
+               file_size="1048576"
+               duration_seconds="120"
+               active="true"
+               create_time="createTime()"
+               update_time="updateTime()"/>
+
+  <grant_status _name="Grant Status"
+                _module="Access"
+                _module_key="access"
+                media_library="media_library()"
+                id="id()"
+                name="string()"
+                code="string()"
+                display_order="number()"
+                _constant="true"
+                _identifier="code">
+    <_value id="1001" name="Active" code="ACTIVE" display_order="1"/>
+    <_value id="1002" name="Expired" code="EXPIRED" display_order="2"/>
+    <_value id="1003" name="Revoked" code="REVOKED" display_order="3"/>
+  </grant_status>
+
+  <ip_access_grant _name="IP Access Grant"
+                   _module="Access"
+                   _module_key="access"
+                   media_library="media_library()"
+                   media_asset="media_asset()"
+                   grant_status="grant_status()"
+                   client_ip="192.168.1.100"
+                   expire_at="2026-10-25T20:52:00"
+                   grant_note="Home network access for demo"
+                   create_time="createTime()"
+                   update_time="updateTime()"/>
+
+  <invite_status _name="Invite Status"
+                 _module="Access"
+                 _module_key="access"
+                 media_library="media_library()"
+                 id="id()"
+                 name="string()"
+                 code="string()"
+                 display_order="number()"
+                 _constant="true"
+                 _identifier="code">
+    <_value id="1001" name="Fresh" code="FRESH" display_order="1"/>
+    <_value id="1002" name="Claimed" code="CLAIMED" display_order="2"/>
+    <_value id="1003" name="Spent" code="SPENT" display_order="3"/>
+  </invite_status>
+
+  <invite_code _name="Invite Code"
+               _audit_mask_fields="invite_token"
+               _module="Access"
+               _module_key="access"
+               media_library="media_library()"
+               media_asset="media_asset()"
+               invite_status="invite_status()"
+               invite_token="INV-7f3a9c2e5b1d"
+               first_client_ip="192.168.1.100"
+               first_click_at="2026-10-18T20:00:00"
+               second_client_ip="192.168.1.200"
+               second_click_at="2026-10-19T20:00:00"
+               grant_note="One-shot invite link for demo video"
+               create_time="createTime()"
+               update_time="updateTime()"/>
+
+  <app_setting _name="App Setting"
+               _module="Settings"
+               _module_key="settings"
+               media_library="media_library()"
+               setting_key="external_base_url"
+               setting_value="https://media.example.com"
+               setting_name="外部访问 URL 前缀"
+               setting_note="复制邀请链接与打开链接时使用的对外地址前缀"
+               create_time="createTime()"
+               update_time="updateTime()"/>
+
+  <proxy_trust_rule _name="Proxy Trust Rule"
+                    _module="Access"
+                    _module_key="access"
+                    media_library="media_library()"
+                    header_name="X-Forwarded-For"
+                    trusted_proxy_cidrs="10.0.0.0/8,172.16.0.0/12"
+                    enabled="true"
+                    create_time="createTime()"
+                    update_time="updateTime()"/>
+
+  <share_handle _name="Share Handle"
+                _audit_mask_fields="handle_token"
+                _module="Access"
+                _module_key="access"
+                media_library="media_library()"
+                media_asset="media_asset()"
+                handle_token="SHD-7f3a9c2e5b1d"
+                active="true"
+                handle_note="Durable cross-session open link for demo video"
+                create_time="createTime()"
+                update_time="updateTime()"/>
+</root>
