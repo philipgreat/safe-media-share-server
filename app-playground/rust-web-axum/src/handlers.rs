@@ -15,7 +15,9 @@ use teaql_runtime::UserContext;
 use teaql_web_integration_axum::{ContextProvider, TeaContext, WebResponse};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-use crate::entity_ref::{decode_asset_ref, encode_asset_ref};
+use crate::entity_ref::{
+    decode_asset_ref, encode_asset_ref, CODEC_REQUIRED, INVALID_REF,
+};
 use crate::proxy::resolve_client_ip;
 use crate::range::parse_range_header;
 use crate::service::{self, InviteOutcome};
@@ -171,7 +173,6 @@ fn check_admin_key(headers: &HeaderMap) -> Result<(), Response> {
         .get("x-admin-key")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    // Also accept ?key= for simple clipboard use.
     if provided.trim() == expected.trim() {
         return Ok(());
     }
@@ -511,10 +512,10 @@ async fn api_media_detail(
 
 /// 400 for bad guest refs. Plain-text body so error envelopes never echo ids.
 fn invalid_media_ref_response(err: String) -> Response {
-    let message = if err == "ENTITY_REFERENCE_CODEC_REQUIRED" {
+    let message = if err == CODEC_REQUIRED {
         err
     } else {
-        "invalid media reference".to_owned()
+        INVALID_REF.to_owned()
     };
     (StatusCode::BAD_REQUEST, message).into_response()
 }
@@ -558,10 +559,10 @@ async fn redeem_invite_url(
 
     match service::redeem_invite(&context, &token, &client_ip.to_string()).await {
         Ok(InviteOutcome::Joined {
-            invite_id,
             media_asset_id,
             client_ip,
             expire_at,
+            ..
         }) => {
             let media_ref = match encode_asset_ref(&context, media_asset_id) {
                 Ok(r) => r,
@@ -580,7 +581,6 @@ async fn redeem_invite_url(
             }
             WebResponse::of_single(json!({
                 "action": "join_whitelist",
-                "inviteId": invite_id,
                 "mediaRef": media_ref,
                 "clientIp": client_ip,
                 "expireAt": expire_at,
@@ -589,10 +589,10 @@ async fn redeem_invite_url(
             .into_response()
         }
         Ok(InviteOutcome::ExpiredFromWhitelist {
-            invite_id,
             media_asset_id,
             client_ip,
             revoked_grants,
+            ..
         }) => {
             let media_ref = match encode_asset_ref(&context, media_asset_id) {
                 Ok(r) => r,
@@ -610,7 +610,6 @@ async fn redeem_invite_url(
             }
             WebResponse::of_single(json!({
                 "action": "expire_whitelist",
-                "inviteId": invite_id,
                 "mediaRef": media_ref,
                 "clientIp": client_ip,
                 "revokedGrants": revoked_grants,
@@ -618,7 +617,7 @@ async fn redeem_invite_url(
             }))
             .into_response()
         }
-        Ok(InviteOutcome::AlreadySpent { invite_id }) => {
+        Ok(InviteOutcome::AlreadySpent { .. }) => {
             if wants_html {
                 return Response::builder()
                     .status(StatusCode::SEE_OTHER)
@@ -628,9 +627,9 @@ async fn redeem_invite_url(
             }
             (
                 StatusCode::GONE,
-                WebResponse::<Value>::fail(format!(
-                    "invite {invite_id} already spent; expired codes cannot be used again"
-                )),
+                WebResponse::<Value>::fail(
+                    "invite already spent; expired codes cannot be used again".to_owned(),
+                ),
             )
                 .into_response()
         }
@@ -655,10 +654,14 @@ async fn redeem_invite_url(
 async fn admin_create_invite(
     State(_state): State<AppState>,
     TeaContext(context): TeaContext,
+    headers: HeaderMap,
     axum::extract::Query(params): axum::extract::Query<
         std::collections::HashMap<String, String>,
     >,
 ) -> Response {
+    if let Err(resp) = check_admin_key(&headers) {
+        return resp;
+    }
     let asset_id: u64 = match params.get("asset_id").and_then(|s| s.parse().ok()) {
         Some(v) => v,
         None => {
@@ -908,8 +911,12 @@ async fn download_media(
 /// GET /media/{asset_id}/grant/{client_ip} — admin smoke helper.
 async fn admin_grant(
     TeaContext(context): TeaContext,
+    headers: HeaderMap,
     Path((asset_id, client_ip)): Path<(u64, String)>,
 ) -> Response {
+    if let Err(resp) = check_admin_key(&headers) {
+        return resp;
+    }
     let asset_lookup = service::load_active_asset(&context, asset_id).await;
     let asset_opt = match asset_lookup {
         Ok(v) => v,
@@ -1070,13 +1077,14 @@ async fn admin_api_upload_media(
                 .eval()
                 .unwrap_or(0);
             let base = service::external_base_url(&context).await.unwrap_or_default();
+            let asset_ref = encode_asset_ref(&context, id).unwrap_or_default();
             WebResponse::of_single(json!({
                 "mediaAssetId": id,
                 "displayName": display_name,
                 "filePath": dest_rel,
                 "contentType": content_type,
                 "fileSize": bytes.len(),
-                "viewUrl": join_external(&base, &format!("/view/{id}")),
+                "viewUrl": join_external(&base, &format!("/view/{asset_ref}")),
             }))
             .into_response()
         }
@@ -1090,10 +1098,14 @@ async fn admin_api_upload_media(
 async fn admin_create_asset(
     State(state): State<AppState>,
     TeaContext(context): TeaContext,
+    headers: HeaderMap,
     axum::extract::Query(params): axum::extract::Query<
         std::collections::HashMap<String, String>,
     >,
 ) -> Response {
+    if let Err(resp) = check_admin_key(&headers) {
+        return resp;
+    }
     let Some(file_path) = params.get("file_path").cloned() else {
         return WebResponse::<Value>::fail("file_path query param required").into_response();
     };
@@ -1156,12 +1168,13 @@ async fn admin_create_asset(
                 .get_id()
                 .eval()
                 .unwrap_or(0);
+            let asset_ref = encode_asset_ref(&context, id).unwrap_or_default();
             WebResponse::of_single(json!({
                 "mediaAssetId": id,
                 "name": name,
                 "filePath": file_path,
                 "fileSize": file_size,
-                "url": format!("/media/{id}"),
+                "url": format!("/media/{asset_ref}"),
             }))
             .into_response()
         }

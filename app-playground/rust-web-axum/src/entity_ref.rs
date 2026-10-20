@@ -18,16 +18,21 @@ pub const REF_LIFETIME_SECS: u64 = 7 * 24 * 3600;
 
 const KEY_VERSION: u32 = 1;
 const KEY_ENV: &str = "MEDIA_GUARD_REF_KEY";
-const INVALID_REF: &str = "invalid media reference";
-const CODEC_REQUIRED: &str = "ENTITY_REFERENCE_CODEC_REQUIRED";
+
+/// Opaque invalid-reference message. Single owner of the string; callers must
+/// not hardcode it.
+pub const INVALID_REF: &str = "invalid media reference";
+/// Missing-codec config-bug code. Single owner of the string.
+pub const CODEC_REQUIRED: &str = "ENTITY_REFERENCE_CODEC_REQUIRED";
 
 /// Map token errors to a stable message. Missing codec is a config bug and
 /// keeps its code; everything else collapses to one opaque message so raw ids
 /// and crypto details never leak.
 fn map_token_err(err: &teaql_runtime::EntityReferenceTokenError) -> String {
-    match err.code() {
-        "ENTITY_REFERENCE_CODEC_REQUIRED" => CODEC_REQUIRED.to_owned(),
-        _ => INVALID_REF.to_owned(),
+    if err.code() == CODEC_REQUIRED {
+        CODEC_REQUIRED.to_owned()
+    } else {
+        INVALID_REF.to_owned()
     }
 }
 

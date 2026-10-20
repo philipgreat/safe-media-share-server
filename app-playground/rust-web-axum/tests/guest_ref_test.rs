@@ -311,7 +311,7 @@ async fn media_stream_rejects_garbage_ref_without_raw_id_leak() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let text = body_text(resp.into_body()).await;
     assert!(
-        !text.contains(&asset_id.to_string()) || asset_id >= 10,
+        asset_id < 10 || !text.contains(&asset_id.to_string()),
         "unexpected raw id leak for small auto id; body: {text}"
     );
     assert!(!text.contains("\"id\""), "error body leaked id field: {text}");
@@ -320,7 +320,6 @@ async fn media_stream_rejects_garbage_ref_without_raw_id_leak() {
 #[tokio::test]
 async fn invite_json_and_redirect_use_media_ref() {
     let (_dir, context, _lib, asset_id, token, pool) = setup().await;
-    let expected_ref = encode_asset_ref(&context, asset_id).expect("encode ref");
     let router = app(AppState {
         media_root: PathBuf::from("/unused"),
         pool,
@@ -350,17 +349,24 @@ async fn invite_json_and_redirect_use_media_ref() {
         item.get("mediaAssetId").is_none(),
         "guest invite JSON must not expose raw mediaAssetId: {item}"
     );
+    assert!(
+        item.get("inviteId").is_none(),
+        "guest invite JSON must not expose raw inviteId: {item}"
+    );
     let text = body.to_string();
     assert!(
         !text.contains(&format!("\"mediaAssetId\":{asset_id}")),
         "raw id leaked in invite JSON: {text}"
+    );
+    assert!(
+        !text.contains("\"inviteId\""),
+        "inviteId leaked in guest invite JSON: {text}"
     );
 
     // HTML redeem redirect: Location is /view/{ref}, not /view/{id}.
     // Use a second invite via admin-free service call... but invite is one-shot.
     // Re-setup a fresh invite for the HTML path.
     let (_dir2, context2, _lib2, asset_id2, token2, pool2) = setup().await;
-    let expected_ref2 = encode_asset_ref(&context2, asset_id2).expect("encode ref");
     let router2 = app(AppState {
         media_root: PathBuf::from("/unused"),
         pool: pool2,
@@ -396,6 +402,4 @@ async fn invite_json_and_redirect_use_media_ref() {
         !location.contains(&format!("/view/{asset_id2}")),
         "redirect must not use raw id: {location}"
     );
-    let _ = expected_ref;
-    let _ = expected_ref2;
 }
