@@ -518,7 +518,7 @@ async fn api_media_detail(
     headers: HeaderMap,
 ) -> Response {
     let session_fp = session_fp_from_cookie(&headers);
-    let asset_id = match decode_media_ref(&context, &asset_ref, &session_fp) {
+    let asset_id = match decode_media_ref(&context, &asset_ref, &session_fp).await {
         Ok(id) => id,
         Err(err) => return invalid_media_ref_response(err),
     };
@@ -554,9 +554,20 @@ fn invalid_media_ref_response(err: String) -> Response {
 ///
 /// Fingerprint-bound purpose first (`media-access:{fp}`); bare `media-access`
 /// remains readable so pre-session refs keep working when no matching cookie
-/// is presented.
-fn decode_media_ref(context: &UserContext, token: &str, session_fp: &str) -> Result<u64, String> {
+/// is presented. A non-empty fingerprint must map to a live DB session — an
+/// unknown or revoked cookie rejects the ref entirely.
+async fn decode_media_ref(
+    context: &UserContext,
+    token: &str,
+    session_fp: &str,
+) -> Result<u64, String> {
     if !session_fp.is_empty() {
+        let active = service::is_session_active(context, session_fp)
+            .await
+            .map_err(|_| INVALID_REF.to_owned())?;
+        if !active {
+            return Err(INVALID_REF.to_owned());
+        }
         if let Ok(id) = decode_asset_ref_for_session(context, token, session_fp) {
             return Ok(id);
         }
@@ -606,11 +617,15 @@ async fn redeem_invite_url(
 
     match service::redeem_invite(&context, &token, &client_ip.to_string()).await {
         Ok(InviteOutcome::Joined {
+            library_id,
             media_asset_id,
             client_ip,
             expire_at,
             ..
         }) => {
+            if let Err(err) = service::ensure_user_session(&context, library_id, &session_fp).await {
+                return WebResponse::<Value>::fail(err.to_string()).into_response();
+            }
             let media_ref = match encode_asset_ref_for_session(&context, media_asset_id, &session_fp)
             {
                 Ok(r) => r,
@@ -642,11 +657,15 @@ async fn redeem_invite_url(
             )
         }
         Ok(InviteOutcome::ExpiredFromWhitelist {
+            library_id,
             media_asset_id,
             client_ip,
             revoked_grants,
             ..
         }) => {
+            if let Err(err) = service::ensure_user_session(&context, library_id, &session_fp).await {
+                return WebResponse::<Value>::fail(err.to_string()).into_response();
+            }
             let media_ref = match encode_asset_ref_for_session(&context, media_asset_id, &session_fp)
             {
                 Ok(r) => r,
@@ -781,6 +800,13 @@ async fn open_share_handle(
     }
 
     let (session_fp, new_cookie) = session_fp_from_headers(&headers);
+    let library_id = media_guard_service_core::E::share_handle(&handle)
+        .get_media_library_id()
+        .eval()
+        .unwrap_or(0);
+    if let Err(err) = service::ensure_user_session(&context, library_id, &session_fp).await {
+        return WebResponse::<Value>::fail(err.to_string()).into_response();
+    }
     let media_ref = match encode_asset_ref_for_session(&context, asset_id, &session_fp) {
         Ok(r) => r,
         Err(err) => return WebResponse::<Value>::fail(err).into_response(),
@@ -873,7 +899,7 @@ async fn serve_media(
     headers: HeaderMap,
 ) -> Response {
     let session_fp = session_fp_from_cookie(&headers);
-    let asset_id = match decode_media_ref(&context, &asset_ref, &session_fp) {
+    let asset_id = match decode_media_ref(&context, &asset_ref, &session_fp).await {
         Ok(id) => id,
         Err(err) => return invalid_media_ref_response(err),
     };
@@ -1008,7 +1034,7 @@ async fn download_media(
     headers: HeaderMap,
 ) -> Response {
     let session_fp = session_fp_from_cookie(&headers);
-    let asset_id = match decode_media_ref(&context, &asset_ref, &session_fp) {
+    let asset_id = match decode_media_ref(&context, &asset_ref, &session_fp).await {
         Ok(id) => id,
         Err(err) => return invalid_media_ref_response(err),
     };

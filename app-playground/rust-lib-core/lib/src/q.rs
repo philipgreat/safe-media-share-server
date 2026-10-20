@@ -197,4 +197,24 @@ impl Q {
     }
 
 
+
+    pub fn user_sessions() -> UserSessionRequest {
+        UserSessionRequest::new()
+            .select_self()
+            .and_filter(Expr::gt("version", 0_i64))
+    }
+
+    pub fn user_sessions_minimal() -> UserSessionRequest {
+        UserSessionRequest::new()
+            .and_filter(Expr::gt("version", 0_i64))
+    }
+
+    pub fn user_sessions_with_children() -> UserSessionRequest {
+        UserSessionRequest::new()
+            .unlimited()
+            .select_self_fields()
+            .enhance_children_if_needed()
+    }
+
+
 }

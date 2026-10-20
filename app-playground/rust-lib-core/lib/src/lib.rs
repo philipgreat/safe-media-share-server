@@ -24,6 +24,7 @@ pub mod invite_code;
 pub mod app_setting;
 pub mod proxy_trust_rule;
 pub mod share_handle;
+pub mod user_session;
 
 pub use teaql_core;
 pub use teaql_runtime::LedgerEntity;
@@ -41,3 +42,4 @@ pub use invite_code::*;
 pub use app_setting::*;
 pub use proxy_trust_rule::*;
 pub use share_handle::*;
+pub use user_session::*;

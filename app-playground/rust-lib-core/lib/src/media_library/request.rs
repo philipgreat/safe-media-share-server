@@ -527,6 +527,12 @@ impl<R> MediaLibraryRequest<R> {
                         .apply_dynamic_json_filter(tail, value),
                 )
             }
+            "user_session_list" => {
+                self.with_user_session_list_matching(
+                    crate::Q::user_sessions_minimal()
+                        .apply_dynamic_json_filter(tail, value),
+                )
+            }
             _ => self,
         }
     }
@@ -692,6 +698,7 @@ impl<R> MediaLibraryRequest<R> {
         request = request.select_app_setting_list();
         request = request.select_proxy_trust_rule_list();
         request = request.select_share_handle_list();
+        request = request.select_user_session_list();
         request
     }
 
@@ -2431,6 +2438,51 @@ impl<R> MediaLibraryRequest<R> {
             .with_operation(QueryOperation::new(QueryOperationKind::RelationSelect, "select_share_handle_list_with").with_relation("share_handle_list")));
         self
 }
+
+    pub fn have_user_sessions(self) -> Self {
+        self.with_user_session_list_matching(crate::Q::user_sessions_minimal())
+    }
+
+    pub fn have_no_user_sessions(self) -> Self {
+        self.without_user_session_list_matching(crate::Q::user_sessions_minimal())
+    }
+
+    pub fn with_user_session_list_matching(mut self, request: impl Into<QuerySelection>) -> Self {
+        let selection = request.into();
+        self.query = self.query.and_filter(Expr::in_subquery(
+            "id",
+            <crate::UserSession as teaql_core::TeaqlEntity>::entity_descriptor(),
+            selection.query.clone(),
+            "media_library_id",
+        ));
+        self.relation_filters.push(RelationFilter::new("user_session_list", selection));
+        self
+    }
+
+    pub fn without_user_session_list_matching(mut self, request: impl Into<QuerySelection>) -> Self {
+        let selection = request.into();
+        self.query = self.query.and_filter(Expr::not_in_subquery(
+            "id",
+            <crate::UserSession as teaql_core::TeaqlEntity>::entity_descriptor(),
+            selection.query.clone(),
+            "media_library_id",
+        ));
+        self.relation_filters.push(RelationFilter::new("user_session_list", selection));
+        self
+    }
+
+    pub fn select_user_session_list(mut self) -> Self {
+        self.query.relations.push(teaql_core::RelationLoad::new("user_session_list")
+            .with_operation(QueryOperation::new(QueryOperationKind::RelationSelect, "select_user_session_list").with_relation("user_session_list")));
+        self
+    }
+
+    pub fn select_user_session_list_with(mut self, request: impl Into<QuerySelection>) -> Self {
+        let selection = request.into();
+        self.query.relations.push(teaql_core::RelationLoad::with_query("user_session_list", selection.into_query())
+            .with_operation(QueryOperation::new(QueryOperationKind::RelationSelect, "select_user_session_list_with").with_relation("user_session_list")));
+        self
+}
     pub fn count_media_assets(self) -> Self {
         let operation = QueryOperation::new(QueryOperationKind::RelationCount, "count_media_assets");
         self.count_media_assets_internal("count_media_assets".to_owned(), crate::Q::media_assets().unlimited(), operation)
@@ -3549,6 +3601,113 @@ impl<R> MediaLibraryRequest<R> {
         let operation = QueryOperation::new(QueryOperationKind::Aggregate, "max_update_time_of_share_handles_as").with_alias(&alias);
         let selection = request.into().into_query().max("update_time", alias.clone());
         self.scalar_from_share_handles_as(alias, selection, operation)
+    }
+
+    pub fn count_user_sessions(self) -> Self {
+        let operation = QueryOperation::new(QueryOperationKind::RelationCount, "count_user_sessions");
+        self.count_user_sessions_internal("count_user_sessions".to_owned(), crate::Q::user_sessions().unlimited(), operation)
+    }
+
+    pub fn count_user_sessions_as(self, alias: impl Into<String>) -> Self {
+        let alias = alias.into();
+        let operation = QueryOperation::new(QueryOperationKind::RelationCount, "count_user_sessions_as").with_alias(&alias);
+        self.count_user_sessions_internal(alias, crate::Q::user_sessions().unlimited(), operation)
+    }
+
+    pub fn count_user_sessions_with(self, alias: impl Into<String>, request: impl Into<QuerySelection>) -> Self {
+        let alias = alias.into();
+        let operation = QueryOperation::new(QueryOperationKind::RelationCount, "count_user_sessions_with").with_alias(&alias);
+        self.count_user_sessions_internal(alias, request, operation)
+    }
+
+    fn count_user_sessions_internal(mut self, alias: String, request: impl Into<QuerySelection>, operation: QueryOperation) -> Self {
+        let selection = request.into();
+        self.query_options.relation_aggregates.push(RelationAggregate::new(
+            "user_session_list",
+            alias,
+            selection,
+            true,
+        ).with_operation(operation.with_relation("user_session_list")));
+        self
+    }
+
+    pub fn stats_from_user_sessions(self, request: impl Into<QuerySelection>) -> Self {
+        self.stats_from_user_sessions_as("refinements", request)
+    }
+
+    pub fn stats_from_user_sessions_as(mut self, alias: impl Into<String>, request: impl Into<QuerySelection>) -> Self {
+        let selection = request.into();
+        let alias = alias.into();
+        let operation = QueryOperation::new(QueryOperationKind::Aggregate, "stats_from_user_sessions_as")
+            .with_alias(&alias).with_relation("user_session_list");
+        self.query_options.relation_aggregates.push(RelationAggregate::new(
+            "user_session_list",
+            alias,
+            selection,
+            false,
+        ).with_operation(operation));
+        self
+    }
+
+    fn scalar_from_user_sessions_as(mut self, alias: impl Into<String>, request: impl Into<QuerySelection>, operation: QueryOperation) -> Self {
+        let selection = request.into();
+        self.query_options.relation_aggregates.push(RelationAggregate::new(
+            "user_session_list",
+            alias,
+            selection,
+            true,
+        ).with_operation(operation.with_relation("user_session_list")));
+        self
+    }
+
+    pub fn group_by_user_sessions_with_details(self, request: impl Into<QuerySelection>) -> Self {
+        self.stats_from_user_sessions(request)
+    }
+
+
+    pub fn min_create_time_of_user_sessions(self) -> Self {
+        let operation = QueryOperation::new(QueryOperationKind::Aggregate, "min_create_time_of_user_sessions");
+        self.scalar_from_user_sessions_as("min_create_time_of_user_sessions", crate::Q::user_sessions().unlimited().into_query().min("create_time", "min_create_time_of_user_sessions"), operation)
+    }
+
+    pub fn min_create_time_of_user_sessions_as(self, alias: impl Into<String>, request: impl Into<QuerySelection>) -> Self {
+        let alias = alias.into();
+        let operation = QueryOperation::new(QueryOperationKind::Aggregate, "min_create_time_of_user_sessions_as").with_alias(&alias);
+        let selection = request.into().into_query().min("create_time", alias.clone());
+        self.scalar_from_user_sessions_as(alias, selection, operation)
+    }
+    pub fn max_create_time_of_user_sessions(self) -> Self {
+        let operation = QueryOperation::new(QueryOperationKind::Aggregate, "max_create_time_of_user_sessions");
+        self.scalar_from_user_sessions_as("max_create_time_of_user_sessions", crate::Q::user_sessions().unlimited().into_query().max("create_time", "max_create_time_of_user_sessions"), operation)
+    }
+
+    pub fn max_create_time_of_user_sessions_as(self, alias: impl Into<String>, request: impl Into<QuerySelection>) -> Self {
+        let alias = alias.into();
+        let operation = QueryOperation::new(QueryOperationKind::Aggregate, "max_create_time_of_user_sessions_as").with_alias(&alias);
+        let selection = request.into().into_query().max("create_time", alias.clone());
+        self.scalar_from_user_sessions_as(alias, selection, operation)
+    }
+    pub fn min_update_time_of_user_sessions(self) -> Self {
+        let operation = QueryOperation::new(QueryOperationKind::Aggregate, "min_update_time_of_user_sessions");
+        self.scalar_from_user_sessions_as("min_update_time_of_user_sessions", crate::Q::user_sessions().unlimited().into_query().min("update_time", "min_update_time_of_user_sessions"), operation)
+    }
+
+    pub fn min_update_time_of_user_sessions_as(self, alias: impl Into<String>, request: impl Into<QuerySelection>) -> Self {
+        let alias = alias.into();
+        let operation = QueryOperation::new(QueryOperationKind::Aggregate, "min_update_time_of_user_sessions_as").with_alias(&alias);
+        let selection = request.into().into_query().min("update_time", alias.clone());
+        self.scalar_from_user_sessions_as(alias, selection, operation)
+    }
+    pub fn max_update_time_of_user_sessions(self) -> Self {
+        let operation = QueryOperation::new(QueryOperationKind::Aggregate, "max_update_time_of_user_sessions");
+        self.scalar_from_user_sessions_as("max_update_time_of_user_sessions", crate::Q::user_sessions().unlimited().into_query().max("update_time", "max_update_time_of_user_sessions"), operation)
+    }
+
+    pub fn max_update_time_of_user_sessions_as(self, alias: impl Into<String>, request: impl Into<QuerySelection>) -> Self {
+        let alias = alias.into();
+        let operation = QueryOperation::new(QueryOperationKind::Aggregate, "max_update_time_of_user_sessions_as").with_alias(&alias);
+        let selection = request.into().into_query().max("update_time", alias.clone());
+        self.scalar_from_user_sessions_as(alias, selection, operation)
     }
 }
 

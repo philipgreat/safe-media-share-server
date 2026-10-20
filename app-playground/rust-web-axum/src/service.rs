@@ -5,7 +5,7 @@ use chrono::{Duration, NaiveDateTime, Utc};
 use media_guard_service_core::teaql_core::Entity;
 use media_guard_service_core::{
     AuditedSave, E, InviteCode, IpAccessGrant, MediaAsset, MediaLibrary, Q, ShareHandle,
-    TeaqlRuntime,
+    TeaqlRuntime, UserSession,
 };
 
 use crate::proxy::ProxyTrustConfig;
@@ -474,6 +474,7 @@ pub enum InviteOutcome {
     /// First click: IP joined the whitelist.
     Joined {
         invite_id: u64,
+        library_id: u64,
         media_asset_id: u64,
         client_ip: String,
         expire_at: String,
@@ -481,6 +482,7 @@ pub enum InviteOutcome {
     /// Second click: IP left the whitelist.
     ExpiredFromWhitelist {
         invite_id: u64,
+        library_id: u64,
         media_asset_id: u64,
         client_ip: String,
         revoked_grants: usize,
@@ -548,7 +550,7 @@ pub async fn redeem_invite(
 
     if let Some(mut invite) = load_invite_in_state(context, invite_token, InviteState::Claimed).await?
     {
-        let (invite_id, _, media_asset_id) = invite_ids(&invite);
+        let (invite_id, library_id, media_asset_id) = invite_ids(&invite);
         let revoked = expire_grants_for_ip_asset(
             context,
             media_asset_id,
@@ -565,6 +567,7 @@ pub async fn redeem_invite(
             .await?;
         return Ok(InviteOutcome::ExpiredFromWhitelist {
             invite_id,
+            library_id,
             media_asset_id,
             client_ip: client_ip.to_owned(),
             revoked_grants: revoked,
@@ -599,6 +602,7 @@ pub async fn redeem_invite(
 
     Ok(InviteOutcome::Joined {
         invite_id,
+        library_id,
         media_asset_id,
         client_ip: client_ip.to_owned(),
         expire_at,
@@ -947,4 +951,98 @@ pub async fn external_base_url(
     Ok(get_setting_value(context, SETTING_EXTERNAL_BASE_URL)
         .await?
         .unwrap_or_default())
+}
+
+// ---------- User sessions (persisted `mg_sid` fingerprints) ----------
+//
+// Cookie fingerprint rows survive process restarts so a browser session can be
+// validated and revoked server-side, not just compared against a cookie value.
+
+/// Load or create the active session row for `session_fp`.
+///
+/// Existing rows get a sliding 7-day expiry and a fresh `last_seen_at`; a
+/// missing fingerprint is created active with the same TTL.
+pub async fn ensure_user_session(
+    context: &impl TeaqlRuntime,
+    library_id: u64,
+    session_fp: &str,
+) -> Result<UserSession, Box<dyn std::error::Error + Send + Sync>> {
+    let existing = Q::user_sessions()
+        .with_session_fp_is(session_fp)
+        .which_are_active()
+        .order_by_id_desc()
+        .limit(1)
+        .comment("what: load active user session by cookie fingerprint")
+        .purpose("why: refresh or create the persisted browser session")
+        .execute_for_one(context)
+        .await?;
+    if let Some(mut row) = existing {
+        row.update_last_seen_at(now_stamp());
+        row.update_expire_at(default_expire_at());
+        let persisted = row
+            .audit_as("Touch browser session: refresh last_seen and sliding expiry")
+            .save(context)
+            .await?;
+        return Ok(persisted);
+    }
+    let mut entity = Q::user_sessions()
+        .comment("what: initialize browser session row")
+        .purpose("why: persist mg_sid fingerprint across restarts")
+        .new_entity(context);
+    entity.update_media_library_id(library_id);
+    entity.update_session_fp(session_fp.to_owned());
+    entity.update_active(true);
+    entity.update_last_seen_at(now_stamp());
+    entity.update_expire_at(default_expire_at());
+    let persisted = entity
+        .audit_as("Create persisted browser session for mg_sid fingerprint")
+        .save(context)
+        .await?;
+    Ok(persisted)
+}
+
+/// True when `session_fp` has an active, unexpired session row.
+pub async fn is_session_active(
+    context: &impl TeaqlRuntime,
+    session_fp: &str,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    if session_fp.is_empty() {
+        return Ok(false);
+    }
+    let now = now_stamp();
+    let rows = Q::user_sessions_minimal()
+        .with_session_fp_is(session_fp)
+        .which_are_active()
+        .with_expire_at_greater_than(now)
+        .order_by_id_desc()
+        .limit(1)
+        .comment("what: check active unexpired session for cookie fingerprint")
+        .purpose("why: validate browser session before decoding media refs")
+        .execute_for_list(context)
+        .await?;
+    Ok(!rows.is_empty())
+}
+
+/// Revoke the active session for `session_fp` (no-op when unknown).
+pub async fn deactivate_user_session(
+    context: &impl TeaqlRuntime,
+    session_fp: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let existing = Q::user_sessions()
+        .with_session_fp_is(session_fp)
+        .which_are_active()
+        .order_by_id_desc()
+        .limit(1)
+        .comment("what: load active user session for revocation")
+        .purpose("why: revoke a persisted browser session")
+        .execute_for_one(context)
+        .await?;
+    let Some(mut row) = existing else {
+        return Ok(());
+    };
+    row.update_active(false);
+    row.audit_as("Revoke browser session fingerprint")
+        .save(context)
+        .await?;
+    Ok(())
 }

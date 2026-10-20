@@ -95,6 +95,11 @@ impl<'a> MediaLibraryExpression<'a> {
         let next = self.result.and_then("share_handle_list", |entity| entity.eval_share_handle_list());
         crate::ShareHandleListExpression::new(next, self.root_desc.clone())
     }
+
+    pub fn get_user_session_list(self) -> crate::UserSessionListExpression<'a> {
+        let next = self.result.and_then("user_session_list", |entity| entity.eval_user_session_list());
+        crate::UserSessionListExpression::new(next, self.root_desc.clone())
+    }
 }
 
 #[derive(Clone)]

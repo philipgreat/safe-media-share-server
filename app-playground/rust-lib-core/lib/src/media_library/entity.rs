@@ -22,6 +22,7 @@ use teaql_macros::{teaql_entity, TeaqlEntity};
 #[teaql(reverse_relation(name = "app_setting_list", target = "AppSetting", json_type = "crate::AppSetting", local_key = "id", foreign_key = "media_library_id", many))]
 #[teaql(reverse_relation(name = "proxy_trust_rule_list", target = "ProxyTrustRule", json_type = "crate::ProxyTrustRule", local_key = "id", foreign_key = "media_library_id", many))]
 #[teaql(reverse_relation(name = "share_handle_list", target = "ShareHandle", json_type = "crate::ShareHandle", local_key = "id", foreign_key = "media_library_id", many))]
+#[teaql(reverse_relation(name = "user_session_list", target = "UserSession", json_type = "crate::UserSession", local_key = "id", foreign_key = "media_library_id", many))]
 #[teaql(entity = "MediaLibrary", table = "media_library_data", data_service = "sqlite", audit_mask_fields = "")]
 pub struct MediaLibrary {
 #[teaql(id)]
@@ -387,6 +388,24 @@ impl MediaLibrary {
         match relation.state() {
             teaql_runtime::LoadedRelation::Loaded | teaql_runtime::LoadedRelation::Empty => teaql_core::eval::EvalResult::Value(relation.value().expect("loaded list relation must have a value")),
             teaql_runtime::LoadedRelation::NotLoaded => teaql_core::eval::EvalResult::NotLoaded { failed_node: "share_handle_list".to_string(), attempted_path: "share_handle_list".to_string() },
+        }
+    }
+
+    /// Returns the relation view installed by the query that loaded this entity.
+    /// This method never performs an implicit database query.
+    pub fn user_session_list(&self) -> teaql_runtime::RelationHandle<'_, teaql_core::SmartList<crate::UserSession>> {
+        self.__teaql_runtime_state().relation_list(
+            <Self as teaql_core::TeaqlEntity>::ENTITY_NAME,
+            self.id(),
+            "user_session_list",
+        )
+    }
+
+    pub fn eval_user_session_list(&self) -> teaql_core::eval::EvalResult<&teaql_core::SmartList<crate::UserSession>> {
+        let relation = self.user_session_list();
+        match relation.state() {
+            teaql_runtime::LoadedRelation::Loaded | teaql_runtime::LoadedRelation::Empty => teaql_core::eval::EvalResult::Value(relation.value().expect("loaded list relation must have a value")),
+            teaql_runtime::LoadedRelation::NotLoaded => teaql_core::eval::EvalResult::NotLoaded { failed_node: "user_session_list".to_string(), attempted_path: "user_session_list".to_string() },
         }
     }
 

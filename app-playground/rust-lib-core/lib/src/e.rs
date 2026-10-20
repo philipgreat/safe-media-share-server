@@ -48,6 +48,11 @@ impl E {
         let root_desc = std::sync::Arc::new(format!("ShareHandle(id={})", value.id()));
         crate::ShareHandleExpression::new(teaql_core::eval::EvalResult::Value(value), root_desc)
     }
+
+    pub fn user_session<'a>(value: &'a crate::UserSession) -> crate::UserSessionExpression<'a> {
+        let root_desc = std::sync::Arc::new(format!("UserSession(id={})", value.id()));
+        crate::UserSessionExpression::new(teaql_core::eval::EvalResult::Value(value), root_desc)
+    }
 }
 
 

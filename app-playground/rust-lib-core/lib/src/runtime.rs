@@ -90,6 +90,7 @@ impl teaql_data_service::SchemaProvider for LocalSchemaProvider {
             "AppSetting" => Some(std::sync::Arc::new(crate::AppSetting::entity_descriptor())),
             "ProxyTrustRule" => Some(std::sync::Arc::new(crate::ProxyTrustRule::entity_descriptor())),
             "ShareHandle" => Some(std::sync::Arc::new(crate::ShareHandle::entity_descriptor())),
+            "UserSession" => Some(std::sync::Arc::new(crate::UserSession::entity_descriptor())),
             _ => None,
         }
     }
@@ -281,6 +282,7 @@ pub fn repository_registry() -> teaql_runtime::InMemoryEntityRegistry {
         .with_entity("AppSetting")
         .with_entity("ProxyTrustRule")
         .with_entity("ShareHandle")
+        .with_entity("UserSession")
 }
 
 pub fn behavior_registry() -> teaql_runtime::InMemoryEntityDataServiceBehaviorRegistry {
@@ -294,6 +296,7 @@ pub fn behavior_registry() -> teaql_runtime::InMemoryEntityDataServiceBehaviorRe
         .with_behavior("AppSetting", AppSettingBehavior::default())
         .with_behavior("ProxyTrustRule", ProxyTrustRuleBehavior::default())
         .with_behavior("ShareHandle", ShareHandleBehavior::default())
+        .with_behavior("UserSession", UserSessionBehavior::default())
 }
 
 pub fn checker_registry() -> teaql_runtime::InMemoryCheckerRegistry {
@@ -307,6 +310,7 @@ pub fn checker_registry() -> teaql_runtime::InMemoryCheckerRegistry {
         .with_checker(teaql_runtime::TypedEntityChecker::<AppSetting, _>::new(AppSettingChecker::default()))
         .with_checker(teaql_runtime::TypedEntityChecker::<ProxyTrustRule, _>::new(ProxyTrustRuleChecker::default()))
         .with_checker(teaql_runtime::TypedEntityChecker::<ShareHandle, _>::new(ShareHandleChecker::default()))
+        .with_checker(teaql_runtime::TypedEntityChecker::<UserSession, _>::new(UserSessionChecker::default()))
 }
 
 fn is_generated_bootstrap_retryable_conflict(error: &teaql_runtime::RuntimeError) -> bool {
@@ -552,6 +556,17 @@ pub fn generated_wire_field_mappings() -> std::collections::BTreeMap<String, std
             ("create_time".to_owned(), "createTime".to_owned()),
             ("update_time".to_owned(), "updateTime".to_owned()),
             ("version".to_owned(), "version".to_owned())
+        ])),
+        ("UserSession".to_owned(), std::collections::BTreeMap::from([
+            ("id".to_owned(), "id".to_owned()),
+            ("media_library".to_owned(), "mediaLibrary".to_owned()),
+            ("session_fp".to_owned(), "sessionFp".to_owned()),
+            ("active".to_owned(), "active".to_owned()),
+            ("last_seen_at".to_owned(), "lastSeenAt".to_owned()),
+            ("expire_at".to_owned(), "expireAt".to_owned()),
+            ("create_time".to_owned(), "createTime".to_owned()),
+            ("update_time".to_owned(), "updateTime".to_owned()),
+            ("version".to_owned(), "version".to_owned())
         ]))
     ])
 }
@@ -572,6 +587,7 @@ pub fn module() -> teaql_runtime::RuntimeModule {
         .entity::<AppSetting>()
         .entity::<ProxyTrustRule>()
         .entity::<ShareHandle>()
+        .entity::<UserSession>()
         .generated_schema_bootstrap(ensure_generated_bootstrap)
 }
 
@@ -595,6 +611,8 @@ pub fn module_with_checkers() -> teaql_runtime::RuntimeModule {
     module = module.checker(teaql_runtime::TypedEntityChecker::<ProxyTrustRule, _>::new(ProxyTrustRuleChecker::default()));
     module = module.entity::<ShareHandle>();
     module = module.checker(teaql_runtime::TypedEntityChecker::<ShareHandle, _>::new(ShareHandleChecker::default()));
+    module = module.entity::<UserSession>();
+    module = module.checker(teaql_runtime::TypedEntityChecker::<UserSession, _>::new(UserSessionChecker::default()));
     module = module.generated_schema_bootstrap(ensure_generated_bootstrap);
     module
 }
@@ -610,6 +628,7 @@ pub fn module_with_behaviors() -> teaql_runtime::RuntimeModule {
     module = module.entity_with_behavior::<AppSetting, _>(AppSettingBehavior::default());
     module = module.entity_with_behavior::<ProxyTrustRule, _>(ProxyTrustRuleBehavior::default());
     module = module.entity_with_behavior::<ShareHandle, _>(ShareHandleBehavior::default());
+    module = module.entity_with_behavior::<UserSession, _>(UserSessionBehavior::default());
     module = module.generated_schema_bootstrap(ensure_generated_bootstrap);
     module
 }
@@ -634,6 +653,8 @@ pub fn module_with_behaviors_and_checkers() -> teaql_runtime::RuntimeModule {
     module = module.checker(teaql_runtime::TypedEntityChecker::<ProxyTrustRule, _>::new(ProxyTrustRuleChecker::default()));
     module = module.entity_with_behavior::<ShareHandle, _>(ShareHandleBehavior::default());
     module = module.checker(teaql_runtime::TypedEntityChecker::<ShareHandle, _>::new(ShareHandleChecker::default()));
+    module = module.entity_with_behavior::<UserSession, _>(UserSessionBehavior::default());
+    module = module.checker(teaql_runtime::TypedEntityChecker::<UserSession, _>::new(UserSessionChecker::default()));
     module = module.generated_schema_bootstrap(ensure_generated_bootstrap);
     module
 }

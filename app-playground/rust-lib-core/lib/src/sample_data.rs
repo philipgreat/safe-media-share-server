@@ -164,6 +164,8 @@ where
 
     generate_proxy_trust_rules(context, &mut state).await?;
 
+    generate_user_sessions(context, &mut state).await?;
+
     generate_invite_codes(context, &mut state).await?;
 
     generate_ip_access_grants(context, &mut state).await?;
@@ -441,6 +443,78 @@ entity.audit_as("Init Sample Data").save(context).await.map_err(SampleDataError:
     }
 
     log::info!("Successfully generated sample records for Proxy Trust Rule.");
+    Ok(())
+}
+
+
+async fn generate_user_sessions<C>(
+    context: &C,
+    state: &mut SampleDataState,
+) -> Result<(), SampleDataError>
+where
+    C: TeaqlRuntime + ?Sized,
+{
+        if state.ids("Media Library").is_empty() {
+            state.record_skipped(crate::UserSession::ENTITY_NAME, "Required dependency Media Library is missing in reference pool".to_string());
+            log::info!("Skipped generating User Session: Required dependency Media Library is missing in reference pool.");
+            return Ok(());
+        }
+
+
+    let object_fields_count = 0 + 1;
+    let base_fanout = std::cmp::max(1, object_fields_count) * 20;
+
+    let fanout = match state.plan.scale {
+        SampleDataScale::Tiny => base_fanout,
+        SampleDataScale::Small => base_fanout * 5,
+        SampleDataScale::Medium => base_fanout * 50,
+    };
+
+    log::info!("Generating sample data for User Session (expected: {})...", fanout);
+
+    for i in 0..fanout {
+        let mut entity = Q::user_sessions().comment("what: initialize a sample entity").purpose("why: populate the requested sample dataset").new_entity(context);
+        let mut used_refs = std::collections::HashSet::<u64>::new();
+
+                if let Some(ref_id) = state.pick_unused_id("Media Library", i as usize, &used_refs) {
+                    entity.update_media_library_id(ref_id);
+                    used_refs.insert(ref_id);
+                } else {
+                    // Optional relation was missing in reference pool
+                }
+                entity.update_session_fp(format!("{} {}", "a1b2c3d4e5f60718293a4b5c6d7e8f90", i + 1));
+
+                entity.update_active(true);
+
+                entity.update_last_seen_at(format!("{} {}", "00:00", i + 1));
+
+                entity.update_expire_at(format!("{} {}", "00:00", i + 1));
+
+                {
+                    let days = ((i as u64 + state.plan.seed) % (365 * 3)) as i64;
+                    let past = chrono::Utc::now().naive_utc() - chrono::Duration::try_days(days).unwrap_or_default();
+                    entity.update_create_time(teaql_core::time::Timestamp(past.and_utc().timestamp_millis()));
+                }
+
+                {
+                    let days = ((i as u64 + state.plan.seed) % (365 * 3)) as i64;
+                    let past = chrono::Utc::now().naive_utc() - chrono::Duration::try_days(days).unwrap_or_default();
+                    entity.update_update_time(teaql_core::time::Timestamp(past.and_utc().timestamp_millis()));
+                }
+
+
+
+entity.audit_as("Init Sample Data").save(context).await.map_err(SampleDataError::from_display)?;
+
+        state.record_generated(crate::UserSession::ENTITY_NAME);
+
+        if i % 20 == 0 {
+            log::info!("Generating User Session: {}/{}", i, fanout);
+        }
+
+    }
+
+    log::info!("Successfully generated sample records for User Session.");
     Ok(())
 }
 

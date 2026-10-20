@@ -276,6 +276,11 @@ pub trait TeaqlRepositoryProvider: TeaqlRuntime {
         Self: 'a;
 
     fn share_handle_repository(&self) -> Result<Self::ShareHandleRepository<'_>, ContextError>;
+    type UserSessionRepository<'a>: TeaqlEntityRepository + 'a
+    where
+        Self: 'a;
+
+    fn user_session_repository(&self) -> Result<Self::UserSessionRepository<'_>, ContextError>;
 }
 
 impl TeaqlRuntime for teaql_runtime::UserContext {
@@ -456,6 +461,14 @@ impl TeaqlRepositoryProvider for teaql_runtime::UserContext {
 
     fn share_handle_repository(&self) -> Result<Self::ShareHandleRepository<'_>, ContextError> {
         self.entity_data_service::<crate::runtime::DataServiceExecutor>("ShareHandle")
+    }
+
+    type UserSessionRepository<'a> = teaql_runtime::EntityDataService<'a, crate::runtime::DataServiceExecutor>
+    where
+        Self: 'a;
+
+    fn user_session_repository(&self) -> Result<Self::UserSessionRepository<'_>, ContextError> {
+        self.entity_data_service::<crate::runtime::DataServiceExecutor>("UserSession")
     }
 }
 
