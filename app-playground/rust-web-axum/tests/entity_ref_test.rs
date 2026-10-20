@@ -123,6 +123,100 @@ mod helpers {
     }
 }
 
+/// Spec [S5] session fingerprint binding: refs are only valid for the session
+/// that minted them (`purpose = media-access:{fp}`; empty fp keeps bare
+/// `media-access` for backward compat).
+mod session_purpose {
+    use std::sync::Arc;
+
+    use teaql_runtime::{AeadEntityReferenceCodec, UserContext};
+
+    use media_guard_service_core_web_axum::entity_ref::{
+        decode_asset_ref, decode_asset_ref_for_session, encode_asset_ref,
+        encode_asset_ref_for_session, purpose_for_session, INVALID_REF, PURPOSE,
+    };
+
+    fn context() -> UserContext {
+        let codec = AeadEntityReferenceCodec::new(1, [(1u32, vec![9u8; 32])]).expect("codec");
+        let mut context = UserContext::new();
+        context.set_entity_reference_codec(Arc::new(codec));
+        context
+    }
+
+    #[test]
+    fn purpose_for_session_empty_fp_keeps_base_purpose() {
+        assert_eq!(purpose_for_session(""), PURPOSE);
+        assert_eq!(purpose_for_session(""), "media-access");
+    }
+
+    #[test]
+    fn purpose_for_session_binds_fingerprint() {
+        assert_eq!(purpose_for_session("abc123"), "media-access:abc123");
+    }
+
+    #[test]
+    fn same_fingerprint_round_trip_hides_raw_id() {
+        const ASSET_ID: u64 = 987_654_321_012;
+        let context = context();
+        let token =
+            encode_asset_ref_for_session(&context, ASSET_ID, "fp-session-1").expect("encode");
+        assert!(token.starts_with("tqr1."), "token={token}");
+        assert!(
+            !token.contains(&ASSET_ID.to_string()),
+            "raw id leaked in token"
+        );
+        assert_eq!(
+            decode_asset_ref_for_session(&context, &token, "fp-session-1").expect("decode"),
+            ASSET_ID
+        );
+    }
+
+    #[test]
+    fn different_fingerprint_rejects_token() {
+        let context = context();
+        let token = encode_asset_ref_for_session(&context, 42, "fp-session-1").expect("encode");
+        let err = decode_asset_ref_for_session(&context, &token, "fp-session-2")
+            .expect_err("other session must not decode");
+        assert_eq!(err, INVALID_REF);
+    }
+
+    #[test]
+    fn empty_fp_is_interoperable_with_media_access() {
+        const ASSET_ID: u64 = 987_654_321_012;
+        let context = context();
+
+        // Session helper with empty fp == legacy `media-access` behavior.
+        let token = encode_asset_ref_for_session(&context, ASSET_ID, "").expect("encode");
+        assert_eq!(
+            decode_asset_ref(&context, &token).expect("legacy decode"),
+            ASSET_ID
+        );
+        assert_eq!(
+            decode_asset_ref_for_session(&context, &token, "").expect("session decode"),
+            ASSET_ID
+        );
+
+        // Legacy encode remains readable through the session helper with empty fp.
+        let legacy = encode_asset_ref(&context, ASSET_ID).expect("legacy encode");
+        assert_eq!(
+            decode_asset_ref_for_session(&context, &legacy, "").expect("session decode"),
+            ASSET_ID
+        );
+    }
+
+    #[test]
+    fn session_ref_not_readable_by_empty_fp_or_vice_versa() {
+        let context = context();
+        let bound = encode_asset_ref_for_session(&context, 7, "fp-a").expect("encode");
+        let err = decode_asset_ref_for_session(&context, &bound, "").expect_err("empty fp");
+        assert_eq!(err, INVALID_REF);
+
+        let bare = encode_asset_ref_for_session(&context, 7, "").expect("encode");
+        let err = decode_asset_ref_for_session(&context, &bare, "fp-a").expect_err("bound fp");
+        assert_eq!(err, INVALID_REF);
+    }
+}
+
 /// Spec [S3] key forms: 64-char hex, standard base64 of 32 bytes, 32 raw bytes.
 mod key_material {
     use base64::Engine as _;

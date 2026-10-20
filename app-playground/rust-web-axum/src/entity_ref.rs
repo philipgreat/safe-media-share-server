@@ -74,6 +74,50 @@ pub fn decode_asset_ref(context: &UserContext, token: &str) -> Result<u64, Strin
         .map_err(|err| map_token_err(&err))
 }
 
+/// Purpose claim for a session-bound media ref.
+///
+/// Empty `fp` keeps bare `media-access` so older refs stay interoperable;
+/// any other fingerprint yields `media-access:{fp}` and is only valid for the
+/// session that minted it ([S5]).
+pub fn purpose_for_session(fp: &str) -> String {
+    if fp.is_empty() {
+        PURPOSE.to_owned()
+    } else {
+        format!("{PURPOSE}:{fp}")
+    }
+}
+
+/// Encode a media asset id bound to one session fingerprint.
+pub fn encode_asset_ref_for_session(
+    context: &UserContext,
+    asset_id: u64,
+    session_fp: &str,
+) -> Result<String, String> {
+    context
+        .encode_entity_reference(
+            ENTITY_TYPE,
+            asset_id,
+            0,
+            &purpose_for_session(session_fp),
+            Duration::from_secs(REF_LIFETIME_SECS),
+        )
+        .map_err(|err| map_token_err(&err))
+}
+
+/// Decode a session-bound reference; only the minting fingerprint succeeds.
+///
+/// Failures collapse to the same opaque message as [`decode_asset_ref`].
+pub fn decode_asset_ref_for_session(
+    context: &UserContext,
+    token: &str,
+    session_fp: &str,
+) -> Result<u64, String> {
+    context
+        .decode_entity_reference(token, ENTITY_TYPE, &purpose_for_session(session_fp))
+        .map(|claims| claims.id)
+        .map_err(|err| map_token_err(&err))
+}
+
 /// Key load order: `MEDIA_GUARD_REF_KEY` as 64-char hex, standard base64 of
 /// 32 bytes, or exactly 32 raw bytes (any bytes, not necessarily UTF-8).
 /// When the variable is unset, an ephemeral random key is used (trial only).

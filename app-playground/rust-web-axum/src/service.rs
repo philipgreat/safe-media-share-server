@@ -4,7 +4,8 @@
 use chrono::{Duration, NaiveDateTime, Utc};
 use media_guard_service_core::teaql_core::Entity;
 use media_guard_service_core::{
-    AuditedSave, E, InviteCode, IpAccessGrant, MediaAsset, MediaLibrary, Q, TeaqlRuntime,
+    AuditedSave, E, InviteCode, IpAccessGrant, MediaAsset, MediaLibrary, Q, ShareHandle,
+    TeaqlRuntime,
 };
 
 use crate::proxy::ProxyTrustConfig;
@@ -49,6 +50,31 @@ pub fn generate_invite_token() -> String {
     let b = h2.finish();
 
     format!("INV-{a:016x}{b:08x}")
+}
+
+/// Durable share handle token (`SHD-` + exactly 24 hex chars), same entropy
+/// mix as [`generate_invite_token`] with the tail masked to 32 bits so the
+/// width is stable.
+pub fn generate_handle_token() -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let mut h = DefaultHasher::new();
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
+        .hash(&mut h);
+    std::process::id().hash(&mut h);
+    let a = h.finish();
+
+    let mut h2 = DefaultHasher::new();
+    a.hash(&mut h2);
+    std::thread::current().id().hash(&mut h2);
+    let b = h2.finish();
+
+    format!("SHD-{a:016x}{:08x}", b as u32)
 }
 
 pub async fn ensure_media_library(
@@ -103,6 +129,9 @@ pub async fn create_media_asset(
         .audit_as("Register media asset for IP-protected playback")
         .save(context)
         .await?;
+    // Every asset gets a durable share handle up front ([S2] role split).
+    let asset_id = E::media_asset(&persisted).get_id().eval().unwrap_or(0);
+    ensure_share_handle(context, library_id, asset_id).await?;
     Ok(persisted)
 }
 
@@ -574,6 +603,86 @@ pub async fn redeem_invite(
         client_ip: client_ip.to_owned(),
         expire_at,
     })
+}
+
+// ---------- Share handles ([S2] durable SHD- token, not session refs) ----------
+//
+// Durable DB-backed open-link tokens. Session-local `tqr1.` fingerprinted
+// refs never appear in shareable URLs.
+
+/// Active share handle for the asset, created on first call (idempotent).
+pub async fn ensure_share_handle(
+    context: &impl TeaqlRuntime,
+    library_id: u64,
+    media_asset_id: u64,
+) -> Result<ShareHandle, Box<dyn std::error::Error + Send + Sync>> {
+    let existing = Q::share_handles()
+        .which_are_active()
+        .with_media_asset_matching(Q::media_assets_minimal().with_id_is(media_asset_id))
+        .order_by_id_desc()
+        .limit(1)
+        .comment("what: load active share handle for media asset")
+        .purpose("why: reuse the durable share handle across sessions")
+        .execute_for_one(context)
+        .await?;
+    if let Some(handle) = existing {
+        return Ok(handle);
+    }
+    let mut entity = Q::share_handles()
+        .comment("what: initialize durable share handle")
+        .purpose("why: provide a stable cross-session open link")
+        .new_entity(context);
+    entity.update_media_library_id(library_id);
+    entity.update_media_asset_id(media_asset_id);
+    entity.update_handle_token(generate_handle_token());
+    entity.update_active(true);
+    entity.update_handle_note("Auto-created durable share handle".to_owned());
+    let persisted = entity
+        .audit_as("Create durable share handle for media asset")
+        .save(context)
+        .await?;
+    Ok(persisted)
+}
+
+/// Load one share handle by its secret token (active or not).
+pub async fn load_share_handle_by_token(
+    context: &impl TeaqlRuntime,
+    handle_token: &str,
+) -> Result<Option<ShareHandle>, Box<dyn std::error::Error + Send + Sync>> {
+    let rows = Q::share_handles()
+        .with_handle_token_is(handle_token)
+        .order_by_id_desc()
+        .limit(1)
+        .comment("what: load share handle by secret token")
+        .purpose("why: resolve durable share link")
+        .execute_for_list(context)
+        .await?;
+    Ok(rows.into_iter().next())
+}
+
+/// Enable or disable a share handle by id.
+pub async fn set_share_handle_active(
+    context: &impl TeaqlRuntime,
+    handle_id: u64,
+    active: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let Some(mut existing) = Q::share_handles()
+        .with_id_is(handle_id)
+        .comment("what: load share handle for activation change")
+        .purpose("why: enable or disable a durable share link")
+        .execute_for_one(context)
+        .await?
+    else {
+        return Err("share handle not found".into());
+    };
+    existing.update_active(active);
+    let reason = if active {
+        "Reactivate durable share handle"
+    } else {
+        "Deactivate durable share handle"
+    };
+    existing.audit_as(reason).save(context).await?;
+    Ok(())
 }
 
 // ---------- Admin dashboard listings ----------
