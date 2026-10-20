@@ -12,9 +12,12 @@ use media_guard_service_core::E;
 use serde_json::Value;
 use tower::ServiceExt;
 
-use media_guard_service_core_web_axum::entity_ref::{decode_asset_ref, encode_asset_ref};
+use media_guard_service_core_web_axum::entity_ref::{
+    decode_asset_ref_for_session, encode_asset_ref,
+};
 use media_guard_service_core_web_axum::handlers::{app, AppState};
 use media_guard_service_core_web_axum::service;
+use media_guard_service_core_web_axum::session::SESSION_COOKIE;
 
 fn temp_db_url(dir: &tempfile::TempDir) -> String {
     format!("sqlite://{}/media-guard.db", dir.path().display())
@@ -101,6 +104,22 @@ fn guest_items(body: &Value) -> Vec<&Value> {
         .expect("data array")
         .iter()
         .collect()
+}
+
+/// Extract the `mg_sid` value from a `Set-Cookie` response header.
+fn session_fp_from_set_cookie(headers: &axum::http::HeaderMap) -> String {
+    for value in headers.get_all(axum::http::header::SET_COOKIE) {
+        let raw = value.to_str().expect("Set-Cookie utf8");
+        for part in raw.split(';') {
+            let part = part.trim();
+            if let Some(rest) = part.strip_prefix(SESSION_COOKIE) {
+                if let Some(fp) = rest.strip_prefix('=') {
+                    return fp.to_owned();
+                }
+            }
+        }
+    }
+    panic!("expected Set-Cookie {SESSION_COOKIE}");
 }
 
 /// Assert guest JSON has `ref` (tqr1.) and no raw `"id"` field.
@@ -335,6 +354,7 @@ async fn invite_json_and_redirect_use_media_ref() {
     );
     let resp = router.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+    let fp = session_fp_from_set_cookie(resp.headers());
     let body = body_json(resp.into_body()).await;
     let items = guest_items(&body);
     assert_eq!(items.len(), 1);
@@ -344,7 +364,10 @@ async fn invite_json_and_redirect_use_media_ref() {
         .and_then(|v| v.as_str())
         .expect("mediaRef field");
     assert!(media_ref.starts_with("tqr1."), "mediaRef={media_ref}");
-    assert_eq!(decode_asset_ref(&context, media_ref).expect("decode"), asset_id);
+    assert_eq!(
+        decode_asset_ref_for_session(&context, media_ref, &fp).expect("decode"),
+        asset_id
+    );
     assert!(
         item.get("mediaAssetId").is_none(),
         "guest invite JSON must not expose raw mediaAssetId: {item}"
@@ -381,6 +404,7 @@ async fn invite_json_and_redirect_use_media_ref() {
     );
     let resp = router2.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    let fp2 = session_fp_from_set_cookie(resp.headers());
     let location = resp
         .headers()
         .get(axum::http::header::LOCATION)
@@ -395,7 +419,7 @@ async fn invite_json_and_redirect_use_media_ref() {
     );
     let location_ref = location.trim_start_matches("/view/");
     assert_eq!(
-        decode_asset_ref(&context2, location_ref).expect("decode location ref"),
+        decode_asset_ref_for_session(&context2, location_ref, &fp2).expect("decode location ref"),
         asset_id2
     );
     assert!(

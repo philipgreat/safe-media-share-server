@@ -16,11 +16,15 @@ use teaql_web_integration_axum::{ContextProvider, TeaContext, WebResponse};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use crate::entity_ref::{
-    decode_asset_ref, encode_asset_ref, CODEC_REQUIRED, INVALID_REF,
+    decode_asset_ref, decode_asset_ref_for_session, encode_asset_ref, encode_asset_ref_for_session,
+    CODEC_REQUIRED, INVALID_REF,
 };
 use crate::proxy::resolve_client_ip;
 use crate::range::parse_range_header;
 use crate::service::{self, InviteOutcome};
+use crate::session::{
+    attach_session_cookie, session_fp_from_cookie, session_fp_from_headers,
+};
 use crate::settings::join_external;
 
 #[derive(Clone)]
@@ -61,6 +65,8 @@ pub fn app(state: AppState) -> Router {
         .route("/admin/api/media", post(admin_api_upload_media))
         // Specific URL for invite redemption — not exposed elsewhere.
         .route("/invite/{token}", get(redeem_invite_url))
+        // Durable cross-session share entry: mints a session-bound media ref.
+        .route("/open/{handle_token}", get(open_share_handle))
         .route("/media/{asset_ref}", get(serve_media))
         .route("/media/{asset_ref}/download", get(download_media))
         .route("/media/{asset_id}/grant/{client_ip}", get(admin_grant))
@@ -206,6 +212,12 @@ async fn admin_api_media(
             for (_id, token, asset_id) in fresh {
                 by_asset.entry(asset_id).or_insert(token);
             }
+            let handles = service::list_active_share_handles(&context).await.unwrap_or_default();
+            let mut share_by_asset: std::collections::HashMap<u64, String> =
+                std::collections::HashMap::new();
+            for (asset_id, token) in handles {
+                share_by_asset.entry(asset_id).or_insert(token);
+            }
             let data: Vec<Value> = items
                 .iter()
                 .map(|v| {
@@ -218,6 +230,12 @@ async fn admin_api_media(
                     // Admin may keep the internal id for diagnostics, but share
                     // links must embed the encrypted guest ref.
                     let asset_ref = encode_asset_ref(&context, v.id).unwrap_or_default();
+                    let share_token = share_by_asset.get(&v.id).cloned().unwrap_or_default();
+                    let share_url = if share_token.is_empty() {
+                        String::new()
+                    } else {
+                        join_external(&base, &format!("/open/{share_token}"))
+                    };
                     json!({
                         "id": v.id,
                         "ref": asset_ref,
@@ -227,6 +245,7 @@ async fn admin_api_media(
                         "fileSize": v.file_size,
                         "inviteToken": token,
                         "inviteUrl": invite_url,
+                        "shareUrl": share_url,
                         "viewUrl": join_external(&base, &format!("/view/{asset_ref}")),
                         "downloadUrl": join_external(&base, &format!("/media/{asset_ref}/download")),
                         "mediaUrl": join_external(&base, &format!("/media/{asset_ref}")),
@@ -453,8 +472,16 @@ async fn admin_api_create_invite(
 }
 
 /// Guest-facing media JSON: encrypted `ref` only, never the raw numeric id.
-fn guest_asset_json(context: &UserContext, view: &service::AssetView, authorized: bool) -> Value {
-    let asset_ref = encode_asset_ref(context, view.id).unwrap_or_default();
+///
+/// Refs are minted against the caller's session fingerprint (empty fp keeps the
+/// bare `media-access` purpose for cookie-less legacy clients).
+fn guest_asset_json(
+    context: &UserContext,
+    view: &service::AssetView,
+    authorized: bool,
+    session_fp: &str,
+) -> Value {
+    let asset_ref = encode_asset_ref_for_session(context, view.id, session_fp).unwrap_or_default();
     json!({
         "ref": asset_ref,
         "displayName": view.display_name,
@@ -468,12 +495,14 @@ fn guest_asset_json(context: &UserContext, view: &service::AssetView, authorized
 /// GET /api/media — browse list (metadata is visible; playback still needs whitelist).
 async fn api_list_media(
     TeaContext(context): TeaContext,
+    headers: HeaderMap,
 ) -> Response {
+    let session_fp = session_fp_from_cookie(&headers);
     match service::list_active_assets(&context).await {
         Ok(items) => {
             let data: Vec<Value> = items
                 .iter()
-                .map(|v| guest_asset_json(&context, v, false))
+                .map(|v| guest_asset_json(&context, v, false, &session_fp))
                 .collect();
             WebResponse::of_list(data).into_response()
         }
@@ -488,7 +517,8 @@ async fn api_media_detail(
     Path(asset_ref): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let asset_id = match decode_asset_ref(&context, &asset_ref) {
+    let session_fp = session_fp_from_cookie(&headers);
+    let asset_id = match decode_media_ref(&context, &asset_ref, &session_fp) {
         Ok(id) => id,
         Err(err) => return invalid_media_ref_response(err),
     };
@@ -507,7 +537,7 @@ async fn api_media_detail(
     let authorized = service::is_ip_allowed(&context, asset_id, &client_ip.to_string())
         .await
         .unwrap_or(false);
-    WebResponse::of_single(guest_asset_json(&context, &view, authorized)).into_response()
+    WebResponse::of_single(guest_asset_json(&context, &view, authorized, &session_fp)).into_response()
 }
 
 /// 400 for bad guest refs. Plain-text body so error envelopes never echo ids.
@@ -518,6 +548,20 @@ fn invalid_media_ref_response(err: String) -> Response {
         INVALID_REF.to_owned()
     };
     (StatusCode::BAD_REQUEST, message).into_response()
+}
+
+/// Decode a media ref for this request ([S5]).
+///
+/// Fingerprint-bound purpose first (`media-access:{fp}`); bare `media-access`
+/// remains readable so pre-session refs keep working when no matching cookie
+/// is presented.
+fn decode_media_ref(context: &UserContext, token: &str, session_fp: &str) -> Result<u64, String> {
+    if !session_fp.is_empty() {
+        if let Ok(id) = decode_asset_ref_for_session(context, token, session_fp) {
+            return Ok(id);
+        }
+    }
+    decode_asset_ref(context, token)
 }
 
 /// Resolve the real client IP: trusted-proxy CIDR + forwarded headers.
@@ -556,6 +600,9 @@ async fn redeem_invite_url(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.contains("text/html"))
         .unwrap_or(false);
+    // Invite mint prefers session-bound refs + cookie ([S5]); the ref is for
+    // immediate UX only, never a durable bookmark.
+    let (session_fp, new_cookie) = session_fp_from_headers(&headers);
 
     match service::redeem_invite(&context, &token, &client_ip.to_string()).await {
         Ok(InviteOutcome::Joined {
@@ -564,29 +611,35 @@ async fn redeem_invite_url(
             expire_at,
             ..
         }) => {
-            let media_ref = match encode_asset_ref(&context, media_asset_id) {
+            let media_ref = match encode_asset_ref_for_session(&context, media_asset_id, &session_fp)
+            {
                 Ok(r) => r,
                 Err(err) => return WebResponse::<Value>::fail(err).into_response(),
             };
             if wants_html {
                 // Browser: jump straight into the media view.
-                return Response::builder()
+                let mut builder = Response::builder()
                     .status(StatusCode::SEE_OTHER)
                     .header(
                         axum::http::header::LOCATION,
                         format!("/view/{media_ref}"),
-                    )
-                    .body(Body::empty())
-                    .unwrap();
+                    );
+                if let Some(cookie) = &new_cookie {
+                    builder = builder.header(axum::http::header::SET_COOKIE, cookie.as_str());
+                }
+                return builder.body(Body::empty()).unwrap();
             }
-            WebResponse::of_single(json!({
-                "action": "join_whitelist",
-                "mediaRef": media_ref,
-                "clientIp": client_ip,
-                "expireAt": expire_at,
-                "message": "First click: IP added to whitelist"
-            }))
-            .into_response()
+            attach_session_cookie(
+                WebResponse::of_single(json!({
+                    "action": "join_whitelist",
+                    "mediaRef": media_ref,
+                    "clientIp": client_ip,
+                    "expireAt": expire_at,
+                    "message": "First click: IP added to whitelist"
+                }))
+                .into_response(),
+                new_cookie,
+            )
         }
         Ok(InviteOutcome::ExpiredFromWhitelist {
             media_asset_id,
@@ -594,28 +647,34 @@ async fn redeem_invite_url(
             revoked_grants,
             ..
         }) => {
-            let media_ref = match encode_asset_ref(&context, media_asset_id) {
+            let media_ref = match encode_asset_ref_for_session(&context, media_asset_id, &session_fp)
+            {
                 Ok(r) => r,
                 Err(err) => return WebResponse::<Value>::fail(err).into_response(),
             };
             if wants_html {
-                return Response::builder()
+                let mut builder = Response::builder()
                     .status(StatusCode::SEE_OTHER)
                     .header(
                         axum::http::header::LOCATION,
                         format!("/?expired=1&asset={media_ref}"),
-                    )
-                    .body(Body::empty())
-                    .unwrap();
+                    );
+                if let Some(cookie) = &new_cookie {
+                    builder = builder.header(axum::http::header::SET_COOKIE, cookie.as_str());
+                }
+                return builder.body(Body::empty()).unwrap();
             }
-            WebResponse::of_single(json!({
-                "action": "expire_whitelist",
-                "mediaRef": media_ref,
-                "clientIp": client_ip,
-                "revokedGrants": revoked_grants,
-                "message": "Second click: IP expired from whitelist"
-            }))
-            .into_response()
+            attach_session_cookie(
+                WebResponse::of_single(json!({
+                    "action": "expire_whitelist",
+                    "mediaRef": media_ref,
+                    "clientIp": client_ip,
+                    "revokedGrants": revoked_grants,
+                    "message": "Second click: IP expired from whitelist"
+                }))
+                .into_response(),
+                new_cookie,
+            )
         }
         Ok(InviteOutcome::AlreadySpent { .. }) => {
             if wants_html {
@@ -647,6 +706,107 @@ async fn redeem_invite_url(
             )
                 .into_response()
         }
+    }
+}
+
+/// GET /open/{handle_token} — durable share entry ([S4]).
+///
+/// Resolves the handle, enforces the IP whitelist, then mints a session-bound
+/// media ref and redirects (HTML) or returns `{mediaRef}` (JSON). The redirect
+/// target never contains the `SHD-` handle or a raw asset id.
+#[axum::debug_handler]
+async fn open_share_handle(
+    State(_state): State<AppState>,
+    TeaContext(context): TeaContext,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(handle_token): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let wants_html = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.contains("text/html"))
+        .unwrap_or(false);
+
+    let loaded = service::load_share_handle_by_token(&context, &handle_token).await;
+    let handle = match loaded {
+        Ok(Some(handle)) => handle,
+        Ok(None) => {
+            return open_error_response(wants_html, StatusCode::NOT_FOUND, "share link not found");
+        }
+        Err(err) => {
+            return WebResponse::<Value>::fail(err.to_string()).into_response();
+        }
+    };
+
+    let active = media_guard_service_core::E::share_handle(&handle)
+        .get_active()
+        .eval()
+        .unwrap_or(false);
+    if !active {
+        return open_error_response(
+            wants_html,
+            StatusCode::GONE,
+            "share link is no longer active",
+        );
+    }
+    let asset_id = media_guard_service_core::E::share_handle(&handle)
+        .get_media_asset_id()
+        .eval()
+        .unwrap_or(0);
+
+    let client_ip = match resolve_ip(&context, peer, &headers).await {
+        Ok(ip) => ip,
+        Err(err) => return WebResponse::<Value>::fail(err).into_response(),
+    };
+    let allowed = service::is_ip_allowed(&context, asset_id, &client_ip.to_string())
+        .await
+        .unwrap_or(false);
+    if !allowed {
+        // No asset id / handle in the bounce — guest needs an invite ([S7]).
+        if wants_html {
+            return Response::builder()
+                .status(StatusCode::SEE_OTHER)
+                .header(axum::http::header::LOCATION, "/?need_invite=1")
+                .body(Body::empty())
+                .unwrap();
+        }
+        return (
+            StatusCode::FORBIDDEN,
+            WebResponse::<Value>::fail(
+                "this IP is not authorized for the shared media; use an invite link",
+            ),
+        )
+            .into_response();
+    }
+
+    let (session_fp, new_cookie) = session_fp_from_headers(&headers);
+    let media_ref = match encode_asset_ref_for_session(&context, asset_id, &session_fp) {
+        Ok(r) => r,
+        Err(err) => return WebResponse::<Value>::fail(err).into_response(),
+    };
+
+    if wants_html {
+        let mut builder = Response::builder()
+            .status(StatusCode::SEE_OTHER)
+            .header(axum::http::header::LOCATION, format!("/view/{media_ref}"));
+        if let Some(cookie) = &new_cookie {
+            builder = builder.header(axum::http::header::SET_COOKIE, cookie.as_str());
+        }
+        return builder.body(Body::empty()).unwrap();
+    }
+    attach_session_cookie(
+        WebResponse::of_single(json!({ "mediaRef": media_ref })).into_response(),
+        new_cookie,
+    )
+}
+
+/// Opaque 404/410 for share handles — never echo ids or tokens ([S7]).
+fn open_error_response(wants_html: bool, status: StatusCode, message: &str) -> Response {
+    if wants_html {
+        (status, message.to_owned()).into_response()
+    } else {
+        (status, WebResponse::<Value>::fail(message.to_owned())).into_response()
     }
 }
 
@@ -712,7 +872,8 @@ async fn serve_media(
     Path(asset_ref): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let asset_id = match decode_asset_ref(&context, &asset_ref) {
+    let session_fp = session_fp_from_cookie(&headers);
+    let asset_id = match decode_media_ref(&context, &asset_ref, &session_fp) {
         Ok(id) => id,
         Err(err) => return invalid_media_ref_response(err),
     };
@@ -846,7 +1007,8 @@ async fn download_media(
     Path(asset_ref): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let asset_id = match decode_asset_ref(&context, &asset_ref) {
+    let session_fp = session_fp_from_cookie(&headers);
+    let asset_id = match decode_media_ref(&context, &asset_ref, &session_fp) {
         Ok(id) => id,
         Err(err) => return invalid_media_ref_response(err),
     };

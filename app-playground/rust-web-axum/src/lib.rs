@@ -12,6 +12,7 @@ pub mod handlers;
 pub mod proxy;
 pub mod range;
 pub mod service;
+pub mod session;
 pub mod settings;
 
 pub fn generated_domain_crate() -> &'static str {

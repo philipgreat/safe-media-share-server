@@ -685,6 +685,29 @@ pub async fn set_share_handle_active(
     Ok(())
 }
 
+/// Active share handles as `(media_asset_id, handle_token)` for admin share URLs.
+pub async fn list_active_share_handles(
+    context: &impl TeaqlRuntime,
+) -> Result<Vec<(u64, String)>, Box<dyn std::error::Error + Send + Sync>> {
+    let rows = Q::share_handles()
+        .which_are_active()
+        .order_by_id_desc()
+        .limit(200)
+        .comment("what: list active share handles")
+        .purpose("why: build admin share URLs")
+        .execute_for_list(context)
+        .await?;
+    Ok(rows
+        .iter()
+        .map(|row| {
+            (
+                E::share_handle(row).get_media_asset_id().eval().unwrap_or(0),
+                E::share_handle(row).get_handle_token().eval().unwrap_or_default(),
+            )
+        })
+        .collect())
+}
+
 // ---------- Admin dashboard listings ----------
 
 /// One row of the admin whitelist table.
