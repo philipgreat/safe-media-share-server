@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use teaql_runtime::{AeadEntityReferenceCodec, EntityReferenceCodec};
 
+use media_guard_service_core_web_axum::entity_ref::parse_key_material;
+
 fn codec() -> AeadEntityReferenceCodec {
     AeadEntityReferenceCodec::new(1, [(1u32, vec![7u8; 32])]).expect("codec")
 }
@@ -101,5 +103,54 @@ mod helpers {
             .encode(ENTITY_TYPE, 7, 0, PURPOSE, Duration::from_secs(60))
             .expect("encode");
         assert!(token.starts_with("tqr1."));
+    }
+}
+
+/// Spec [S3] key forms: 64-char hex, standard base64 of 32 bytes, 32 raw bytes.
+mod key_material {
+    use base64::Engine as _;
+
+    use super::parse_key_material;
+
+    #[test]
+    fn accepts_64_char_hex() {
+        let hex = "a1b2c3d4".repeat(8); // 64 chars
+        let key = parse_key_material(hex.as_bytes()).expect("hex key");
+        assert_eq!(key[0], 0xa1);
+        assert_eq!(key[1], 0xb2);
+        assert_eq!(key[31], 0xd4);
+    }
+
+    #[test]
+    fn accepts_standard_base64_of_32_bytes() {
+        let material = [7u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(material);
+        let key = parse_key_material(encoded.as_bytes()).expect("base64 key");
+        assert_eq!(key, material);
+    }
+
+    #[test]
+    fn accepts_raw_32_bytes() {
+        // 32 ASCII bytes that are neither 64-char hex nor base64 of 32 bytes.
+        let raw = b"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        let key = parse_key_material(raw).expect("raw key");
+        assert_eq!(&key, raw);
+    }
+
+    #[test]
+    fn accepts_raw_32_bytes_that_are_not_utf8() {
+        let raw = [0xffu8; 32];
+        let key = parse_key_material(&raw).expect("non-utf8 raw key");
+        assert_eq!(key, raw);
+    }
+
+    #[test]
+    fn rejects_malformed_with_message_listing_all_forms() {
+        for bad in [&b""[..], b"short", &b"z".repeat(64)[..], &[0xffu8; 33][..]] {
+            let err = parse_key_material(bad).expect_err("must reject");
+            assert!(err.contains("64-char hex"), "err={err}");
+            assert!(err.contains("base64"), "err={err}");
+            assert!(err.contains("raw"), "err={err}");
+        }
     }
 }

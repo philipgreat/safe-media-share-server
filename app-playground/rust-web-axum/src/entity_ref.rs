@@ -57,21 +57,54 @@ pub fn decode_asset_ref(context: &UserContext, token: &str) -> Result<u64, Strin
         .map_err(|_| INVALID_REF.to_owned())
 }
 
-/// Key load order: `MEDIA_GUARD_REF_KEY` as 64-char hex, then standard base64
-/// of 32 bytes, else an ephemeral random key (trial only).
+/// Key load order: `MEDIA_GUARD_REF_KEY` as 64-char hex, standard base64 of
+/// 32 bytes, or exactly 32 raw bytes (any bytes, not necessarily UTF-8).
+/// When the variable is unset, an ephemeral random key is used (trial only).
 fn load_key() -> [u8; 32] {
-    if let Ok(raw) = std::env::var(KEY_ENV) {
-        let raw = raw.trim();
-        if let Some(key) = decode_hex_32(raw) {
-            return key;
+    match std::env::var_os(KEY_ENV) {
+        Some(raw) => {
+            use std::os::unix::ffi::OsStrExt as _;
+            parse_key_material(raw.as_bytes()).unwrap_or_else(|err| panic!("{err}"))
         }
-        if let Some(key) = decode_base64_32(raw) {
-            return key;
+        None => {
+            eprintln!("WARN: {KEY_ENV} not set; using ephemeral entity reference key (trial only, refs die on restart)");
+            ephemeral_key()
         }
-        panic!("{KEY_ENV} must be 32 bytes as 64-char hex or standard base64");
     }
-    eprintln!("WARN: {KEY_ENV} not set; using ephemeral entity reference key (trial only, refs die on restart)");
-    ephemeral_key()
+}
+
+/// Parse `MEDIA_GUARD_REF_KEY` material from the env value's raw bytes.
+///
+/// Accepted forms, checked in order:
+/// 1. 64-char hex string encoding 32 bytes
+/// 2. standard base64 of exactly 32 bytes
+/// 3. exactly 32 raw bytes (any bytes; need not be UTF-8)
+pub fn parse_key_material(bytes: &[u8]) -> Result<[u8; 32], String> {
+    // String forms may carry shell whitespace (e.g. trailing newline).
+    let trimmed = bytes.trim_ascii();
+    if let Some(key) = std::str::from_utf8(trimmed)
+        .ok()
+        .and_then(decode_hex_32)
+    {
+        return Ok(key);
+    }
+    if let Some(key) = std::str::from_utf8(trimmed)
+        .ok()
+        .and_then(decode_base64_32)
+    {
+        return Ok(key);
+    }
+    // Raw form: the bytes themselves are the key. Prefer the untrimmed value so
+    // a key that ends in ASCII whitespace is not silently shortened.
+    if bytes.len() == 32 {
+        return Ok(bytes.try_into().expect("32 bytes"));
+    }
+    if trimmed.len() == 32 {
+        return Ok(trimmed.try_into().expect("32 bytes"));
+    }
+    Err(format!(
+        "{KEY_ENV} must be 32 bytes as 64-char hex, standard base64 of 32 bytes, or 32 raw bytes"
+    ))
 }
 
 fn decode_hex_32(input: &str) -> Option<[u8; 32]> {
@@ -111,4 +144,48 @@ fn ephemeral_key() -> [u8; 32] {
         .and_then(|mut f| f.read_exact(&mut key))
         .expect("read /dev/urandom");
     key
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    /// Serializes the tests that mutate `MEDIA_GUARD_REF_KEY` (process-global).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn load_key_reads_raw_32_bytes_from_env() {
+        let _guard = env_guard();
+        std::env::set_var(KEY_ENV, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+        let key = load_key();
+        std::env::remove_var(KEY_ENV);
+        assert_eq!(&key, b"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+    }
+
+    #[test]
+    fn load_key_reads_non_utf8_raw_bytes_from_env() {
+        let _guard = env_guard();
+        // No NUL bytes: env values cannot hold them.
+        let mut raw = vec![0xffu8; 32];
+        raw[0] = 0xfe;
+        use std::os::unix::ffi::OsStringExt as _;
+        std::env::set_var(KEY_ENV, std::ffi::OsString::from_vec(raw.clone()));
+        let key = load_key();
+        std::env::remove_var(KEY_ENV);
+        assert_eq!(key.as_slice(), raw.as_slice());
+    }
+
+    #[test]
+    #[should_panic(expected = "64-char hex")]
+    fn load_key_panics_on_malformed_env() {
+        let _guard = env_guard();
+        std::env::set_var(KEY_ENV, "not-a-valid-key");
+        let _ = load_key();
+    }
 }
