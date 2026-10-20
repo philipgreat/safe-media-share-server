@@ -54,3 +54,32 @@ to context/tenant, document snapshot open/accept, invite token format) is only
 worth it if multi-tenant isolation or cross-service ref validation becomes a
 requirement. Prefer first: stable external key alongside the ref (or accept
 non-determinism) and unifying admin on refs once invite API moves off numeric ids.
+
+## [turn 5 · 2026-10-20T14:21:15Z] share_handle trial — admin share links + S8 verification
+
+Task 4 complete: admin media table now shows and copies `shareUrl`
+(label "Share / 分享链接") beside the operator-facing numeric `id`.
+Guest UserHome unchanged — no handle tokens on guest surfaces.
+
+### Token vocabulary (the important split)
+- Durable share handle `SHD-…` at `/open/{handle_token}`: DB-backed,
+  revocable (`active=false` → 410), safe to put in shareable URLs.
+- Session media ref `tqr1.…`: AES-256-GCM entity ref, purpose
+  `media-access:{mg_sid fp}` where fp is the minting session fingerprint.
+  Play/download APIs accept only these; never embed them in share links.
+- Cookie `mg_sid` is HttpOnly; open sets it when missing and the returned
+  ref is bound to that session fingerprint.
+
+### Semantics vs invite
+- Invite (`INV-…`) = whitelist only (FRESH→CLAIMED→SPENT); one-shot IP
+  grant, not a durable media bookmark.
+- share_handle (`SHD-…`) = cross-session open; re-mints a fresh session
+  ref per open, same media across sessions.
+
+### S8 evidence (full suite green)
+- 63 tests: 18 unit + 18 entity_ref + 7 guest_ref + 6 invite +
+  6 share_handle + 8 share_open (incl. `admin_media_exposes_share_url_with_open_path`).
+- Two sessions opening the same handle get different `tqr1.` refs; each
+  ref only works with its minting `mg_sid` cookie (cross-session isolation).
+- Open redirect carries no `SHD-` or raw id into the view path; unauthorized
+  IP and unknown/inactive handles leak neither.

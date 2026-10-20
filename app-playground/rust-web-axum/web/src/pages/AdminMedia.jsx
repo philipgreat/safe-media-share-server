@@ -318,6 +318,7 @@ export default function AdminMedia({ settings }) {
               <th>Path</th>
               <th>Size</th>
               <th>Invite token</th>
+              <th>Share / 分享链接</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -326,6 +327,7 @@ export default function AdminMedia({ settings }) {
               const token = it.inviteToken || ''
               const inviteUrl =
                 it.inviteUrl || (token ? joinExternal(base, `/invite/${token}`) : '')
+              const shareUrl = it.shareUrl || ''
               const viewUrl = it.viewUrl || joinExternal(base, `/view/${encodeURIComponent(it.ref || '')}`)
               const downloadUrl =
                 it.downloadUrl || joinExternal(base, `/media/${encodeURIComponent(it.ref || '')}/download`)
@@ -338,6 +340,22 @@ export default function AdminMedia({ settings }) {
                   <td className="code">{it.filePath}</td>
                   <td>{formatBytes(it.fileSize)}</td>
                   <td className="code">{token || <span className="faint">—</span>}</td>
+                  <td>
+                    {shareUrl ? (
+                      <>
+                        <div className="code" style={{ wordBreak: 'break-all' }}>{shareUrl}</div>
+                        <button
+                          type="button"
+                          className="copy-btn"
+                          onClick={() => onCopy(shareUrl, 'share link')}
+                        >
+                          Share / 分享链接
+                        </button>
+                      </>
+                    ) : (
+                      <span className="faint">—</span>
+                    )}
+                  </td>
                   <td>
                     <a className="copy-btn" href={viewUrl} target="_blank" rel="noreferrer">
                       Open
