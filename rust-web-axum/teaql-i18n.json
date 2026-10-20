@@ -1,0 +1,166 @@
+{
+    "schema": "teaql.i18n/v1",
+    "defaultLocale": "en",
+    "locales": {
+        "de": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "ko": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "pt": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "zh-TW": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "fil": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "en": {
+            "vocabulary": {
+                "property.inviteCode.grantNote": "Grant Note",
+                "property.inviteStatus.displayOrder": "Display Order",
+                "property.mediaLibrary.createTime": "Create Time",
+                "property.mediaAsset.durationSeconds": "Duration Seconds",
+                "property.mediaAsset.filePath": "File Path",
+                "property.mediaLibrary.rootPath": "Root Path",
+                "property.inviteCode.createTime": "Create Time",
+                "property.mediaAsset.id": "Id",
+                "property.inviteStatus.name": "Name",
+                "property.ipAccessGrant.expireAt": "Expire At",
+                "property.mediaLibrary.updateTime": "Update Time",
+                "property.mediaAsset.contentType": "Content Type",
+                "property.proxyTrustRule.enabled": "Enabled",
+                "property.inviteCode.updateTime": "Update Time",
+                "property.ipAccessGrant.id": "Id",
+                "property.ipAccessGrant.mediaLibrary": "Media Library",
+                "entity.inviteStatus": "Invite Status",
+                "property.inviteCode.id": "Id",
+                "property.grantStatus.code": "Code",
+                "property.ipAccessGrant.createTime": "Create Time",
+                "property.inviteStatus.mediaLibrary": "Media Library",
+                "property.inviteStatus.code": "Code",
+                "property.mediaLibrary.id": "Id",
+                "property.inviteCode.secondClickAt": "Second Click At",
+                "property.mediaLibrary.version": "Version",
+                "entity.ipAccessGrant": "Ip Access Grant",
+                "property.ipAccessGrant.grantNote": "Grant Note",
+                "property.grantStatus.mediaLibrary": "Media Library",
+                "entity.mediaAsset": "Media Asset",
+                "property.mediaAsset.fileSize": "File Size",
+                "property.proxyTrustRule.mediaLibrary": "Media Library",
+                "property.mediaAsset.mediaLibrary": "Media Library",
+                "property.proxyTrustRule.id": "Id",
+                "property.ipAccessGrant.mediaAsset": "Media Asset",
+                "entity.proxyTrustRule": "Proxy Trust Rule",
+                "property.proxyTrustRule.createTime": "Create Time",
+                "property.mediaLibrary.libraryName": "Library Name",
+                "property.proxyTrustRule.version": "Version",
+                "property.ipAccessGrant.grantStatus": "Grant Status",
+                "property.inviteStatus.id": "Id",
+                "property.grantStatus.displayOrder": "Display Order",
+                "entity.grantStatus": "Grant Status",
+                "property.mediaAsset.version": "Version",
+                "property.inviteCode.mediaLibrary": "Media Library",
+                "property.inviteCode.inviteToken": "Invite Token",
+                "property.mediaAsset.createTime": "Create Time",
+                "property.inviteCode.version": "Version",
+                "property.inviteCode.mediaAsset": "Media Asset",
+                "property.inviteCode.firstClientIp": "First Client Ip",
+                "property.mediaAsset.displayName": "Display Name",
+                "property.mediaAsset.updateTime": "Update Time",
+                "property.inviteCode.inviteStatus": "Invite Status",
+                "property.ipAccessGrant.version": "Version",
+                "entity.inviteCode": "Invite Code",
+                "property.ipAccessGrant.clientIp": "Client Ip",
+                "property.inviteCode.secondClientIp": "Second Client Ip",
+                "property.mediaAsset.active": "Active",
+                "property.ipAccessGrant.updateTime": "Update Time",
+                "entity.mediaLibrary": "Media Library",
+                "property.grantStatus.id": "Id",
+                "property.proxyTrustRule.headerName": "Header Name",
+                "property.proxyTrustRule.updateTime": "Update Time",
+                "property.inviteCode.firstClickAt": "First Click At",
+                "property.inviteStatus.version": "Version",
+                "property.proxyTrustRule.trustedProxyCidrs": "Trusted Proxy Cidrs",
+                "property.grantStatus.name": "Name",
+                "property.grantStatus.version": "Version"
+            },
+            "messages": {
+            }
+        },
+        "fr": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "zh-CN": {
+            "vocabulary": {
+                "property.inviteCode.secondClickAt": "2026-10-19T20",
+                "property.ipAccessGrant.expireAt": "2026-10-25T20",
+                "property.inviteCode.firstClickAt": "2026-10-18T20"
+            },
+            "messages": {
+            }
+        },
+        "es": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "ar": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "vi": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "th": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "uk": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "ja": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        },
+        "id": {
+            "vocabulary": {
+            },
+            "messages": {
+            }
+        }
+    }
+}

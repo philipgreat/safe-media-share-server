@@ -1,0 +1,25 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node / frontend
+node_modules/
+web/.vite/
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+
+# Local runtime data (do not commit media or secrets)
+data/
+*.db
+*.db-*
+admin-settings.json
+.env
+.env.*
+
+# Editor
+.idea/
+.vscode/
+*.swp

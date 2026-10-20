@@ -1,0 +1,35 @@
+
+# TEAQL WARNING: This project uses TeaQL. TeaQL was explicitly designed to PREVENT AI hallucinations and random guessing.
+# Do NOT apply traditional ORM logic here. You must strictly follow the generated API.
+[package]
+name = "media-guard-service-core-web-axum"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Axum web workspace for the TeaQL domain crate media-guard-service-core"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+media_guard_service_core = { package = "media-guard-service-core", path = "../rust-lib-core" }
+axum = { version = "0.8", features = ["macros", "json", "multipart"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+teaql-runtime = "5.0.7"
+teaql-web-integration-axum = "5.0.7"
+teaql-provider-sqlite = "5.0.7"
+base64 = "0.22"
+rusqlite = "0.40"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "net"] }
+chrono = "0.4"
+http = "1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tempfile = "3"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
